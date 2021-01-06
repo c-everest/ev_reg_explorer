@@ -1,0 +1,128 @@
+---
+title: "ce_cleaning_ihs_ev_registrations"
+output: html_document
+---
+
+Load libraries
+```{r}
+library(tidyverse)
+library(dplyr)
+library(plotly)
+library(ggplot2)
+library(httr)
+#library(jsonlite)
+library(stringr)
+```
+
+Read in CSV file with EV registrations for TN & GA Jan 2015-Oct 2020
+```{r}
+tnga_ev_reg <- read_csv('../data/ev_tn_ga_2015_2020.csv')
+view(tnga_ev_reg)
+glimpse(tnga_ev_reg)
+
+tnga_ev_reg<-colname_cleanup(tnga_ev_reg)
+glimpse(tnga_ev_reg)
+```
+
+Read in CSV file with nationwide EV registrations Jan 2015-Oct 2020
+Format column names
+```{r}
+us_ev_reg <- read_csv('../data/retail_ev_us_15_20.csv')
+#view(us_ev_reg)
+glimpse(us_ev_reg)
+
+colnames(us_ev_reg)
+
+#Define custom function to cleanup column names of files exported from IHS Markit
+colname_cleanup <- function(x) {
+    colnames(x) <- x %>%
+      colnames() %>%
+      str_to_lower() %>% #make colnames lowercase
+      str_replace_all(" ", "_") %>% #replace spaces with underscores
+      str_replace_all("\\/", "_") #replace slashes with underscores
+    ;x 
+    }
+
+us_ev_reg <-colname_cleanup(us_ev_reg)
+#str_replace("vehicle_count_calendar_","vehs_reg_")
+
+```
+
+Select unique make/model/year combinations
+
+https://stackoverflow.com/questions/11369961/subset-with-unique-cases-based-on-multiple-columns
+https://stackoverflow.com/questions/7790732/unique-for-more-than-one-variable
+https://stackoverflow.com/questions/34444295/how-to-specify-does-not-contain-in-dplyr-filter
+```{r}
+#TEST DATA SET
+#ev_reg[!duplicated(ev_reg[4:6]),]%>%select(Make, Model,'Model Year')
+
+#filter(location%in%input$location)%>%
+
+exclude_make <- c("GEM", "KALMAR", "MITSUBISHI FUSO")
+tnga_ev_models <- tnga_ev_reg %>% 
+  filter(Make%in%exclude_make==FALSE)%>%
+  select(Make,Model,'Model Year') %>%
+  distinct(.keep_all = False) %>%
+  group_by(Make)
+
+View(tnga_ev_models %>%
+  arrange(Make, Model, 'Model Year',.by_group=TRUE)
+)
+
+arrange(tnga_ev_models,'Model Year', .by_group = FALSE)
+```
+
+```{r}
+#US EV REGISTRATION DATA
+
+#List makes that should be excluded to use as filter
+exclude_make <- c("BYD TRANSIT","GEM", "KALMAR", "LION BUS","MITSUBISHI FUSO")
+
+us_ev_models <- us_ev_reg %>% 
+  filter(make%in%exclude_make==FALSE)%>%
+  select(make, model, model_year) %>%
+  distinct(.keep_all = False) %>%
+  group_by(make)%>%
+  arrange(make, model, model_year, .by_group=TRUE)
+
+class(unique(us_ev_models$make))
+
+ev_makes <- unique(us_ev_models$make)
+ev_makes
+
+ev_models <- unique(us_ev_models$model)
+ev_models
+view(ev_models)
+
+#mustang-mach-e instead of mustang mach-e
+#smart instead of smartcar
+#model-3 vs model 3
+#kia soul vs kia soul ev
+#rav4 vs rav4 ev
+#/mini/cooper/2020
+```
+
+
+Read in file with sample vehicle data
+```{r}
+sample_cars<- read_csv('../data/test_vehicle_data.csv')%>%select(Make, Model,'Model Year')
+view(sample_cars)
+glimpse(sample_cars)
+```
+
+#SCRAPS - unused/sample code
+```{r}
+#Original function for replacing space with underscore in column names
+spaceless <- function(x) {colnames(x) <- gsub(" ", "_", colnames(x));x}
+
+#Column cleanup function - alternate w/slight variation in first argument
+colname_cleanup <- function(x) {
+  colnames(x) <- str_to_lower(colnames(x)) %>% 
+    str_replace_all(" ", "_") %>%
+    str_replace_all("\\/", "_")
+  ;x}
+
+
+```
+
