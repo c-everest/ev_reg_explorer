@@ -1,0 +1,622 @@
+---
+title: "ce_scraping_msrp_data"
+description: Scraping historical MSRP data from Autotrader with rvest
+output: html_document
+date: 12-28-20
+---
+#Objective:
+Autotrader has the original MSRP range for virtually all domestic vehicle make/model/year combinations as a page element. 
+For example: 
+    <https://www.autotrader.com/audi/e-tron/2020> 
+    <https://www.autotrader.com/tesla/model-s/2020>
+    <https://www.autotrader.com/mini/cooper/2019>
+    <https://www.autotrader.com/kia/soul/2019>
+
+![example of original msrp range on autotrader](../autotrader_msrp_example.png)
+ Trim level MSRPs are stored in tables.
+ ![table with trim-level data](../autotrader_example_kia_soul_trim_table.png)
+Initial testing of Selenium triggered the Autotrader site to block requests, but reproducing Autotrader's URL structure for model info pages makes static page scraping straightforward enough.
+
+Load libraries
+```{r}
+library(tidyverse)
+library(dplyr)
+library(plotly)
+library(ggplot2)
+library(httr)
+library(stringr)
+library(rvest)
+library(xml2)  #XML package no longer maintained. xml2 is a newer wrapper
+#library(R.utils)
+```
+#Scrape trim-level MSRP data
+#Use XPath's more powerful query options
+Only want MSRP data for model trims with electric motors
+```{r}
+testpage <- read_html("https://www.autotrader.com/kia/soul/2019")
+
+#Ford Focus page has two trim tables, for each hatchback & sedan. Below code works for this as well.
+#testpage <- read_html("https://www.autotrader.com/ford/focus/2018")
+
+model_evtrim_msrps<-testpage%>%
+  #Select table containing vehicle trim data
+  html_nodes(xpath='//div[@data-cmp="trims"]//table//tbody')%>%
+  #Select rows td child element is "Electric" and extract td element in MSRP column
+  html_nodes(xpath = '//tr[td[text()="Electric"]]/td[position()=2]')%>%
+  html_text()
+
+length(model_evtrim_msrps)
+model_evtrim_msrps
+```
+
+#Use GET() to access the site
+httr GET() vs read_html(url)
+"The difference is that with repeated calls to httr::GET, the handle persists between calls. With xml2::read_html(), a new connection is made each time...read_html(GET(url)) is like refreshing your browser, but read_html(url) is like closing your browser and opening a new one. The server gives a unique session ID on the page it delivers. New session, new ID. You can prove this by calling httr::reset_handle(url)"
+
+<https://stackoverflow.com/questions/58219503/difference-between-read-htmlurl-and-read-htmlcontentgeturl-text>
+```{r}
+request <-GET("https://www.autotrader.com/kia/soul/2019")
+request$status_code
+#content(request)%>%html_node(".text-left.text-size-400.text-bold")%>%html_text()
+
+model_evtrim_msrps<-content(request)%>%
+  #Select table containing vehicle trim data
+  html_nodes(xpath='//div[@data-cmp="trims"]//table//tbody')%>%
+  #Select rows td child element is "Electric" and extract td element in MSRP column
+  html_nodes(xpath = '//tr[td[text()="Electric"]]/td[position()=2]')%>%
+  html_text()
+
+```
+
+#Extract the range of MSRP values
+A single table cell entry scraped from Autotrader includes MSRP/Price, with "price" being current available advertised prices. Only MSRP is relevant. 
+```{r}
+#Confirm data type of rvest output - character vector
+typeof(model_evtrim_msrps)
+str(model_evtrim_msrps)
+
+#The printed representation of a string is not the same as the string itself, as it shows the escapes. Use writeLines() to see the raw string values. 
+writeLines(model_evtrim_msrps)
+
+x<-model_evtrim_msrps%>%
+  #Remove dollar sign from MSRP entry
+  str_replace("\\$","")%>%
+  #Remove comma from MSRP entry
+  str_replace(",","")%>%
+  #Extract digits of MSRP
+  str_extract("\\d{4,6}")%>%
+  as.numeric()
+#%>%sort()
+
+#Check to make sure converted to numeric properly
+class(x)
+
+#Grab the min and max values
+min(x)
+max(x)
+
+```
+
+#Format sample data to test webscraping
+```{r}
+sample_cars<- read_csv('../data/test_vehicle_data.csv')%>%select(Make, Model,'Model Year')
+view(sample_cars)
+
+#Define function for replacing space with underscore in column names
+spaceless <- function(x) {colnames(x) <- gsub(" ", "_", colnames(x));x}
+
+#Apply function and then use rename_all() to change to lowercase
+sample_cars <- spaceless(sample_cars) %>% rename_all(tolower)
+
+#Select all character values and cast to lowercase
+  #Do this rather than using base R tolower, which makes ALL values including numeric into character values before changing case
+sample_cars <- sample_cars%>%
+  mutate_if(is.character, str_to_lower) 
+
+#Add column, constructing the vehicle URL on autotrader.com 
+sample_cars <- sample_cars %>%
+  mutate(
+    autotrader_url = paste(
+      'https://www.autotrader.com', make, model, model_year, sep = '/')
+  )
+
+```
+
+#Webscraping function
+```{r}
+#Create column in dataframe and fill with placeholder values
+sample_cars$msrp_min <- 'x'
+sample_cars$msrp_max <- 'y'
+
+#Scrape MSRP info with for loop
+for(i in 1:length(sample_cars$autotrader_url)) {
+  #Call the vehicle's specific URL
+  request <-GET(sample_cars$autotrader_url[i])
+  
+  #check the status code
+  request$status_code
+  
+  #if request is successful, proceed to scraping the page
+  if (request$status_code==200)
+    {
+      #extract msrp range for all trim levels with electric motors
+      model_evtrim_msrp<-content(request)%>%
+        #select table containing vehicle trim data
+        html_nodes(xpath='//div[@data-cmp="trims"]//table//tbody')%>%
+        #select rows where td child element is "Electric" and extract td element in MSRP column
+        html_nodes(xpath = '//tr[td[text()="Electric"]]/td[position()=2]')%>%
+        #format as text
+        html_text()%>%
+        #remove dollar sign from MSRP entries
+        str_replace("\\$","")%>%
+        #remove comma from MSRP entries
+        str_replace(",","")%>%
+        #extract digits of MSRPs
+        str_extract("\\d{4,6}")%>%
+        #change from string to numeric
+        as.numeric()
+      
+      #replace placeholder column values with min and max msrp
+      sample_cars$msrp_min[i] <- min(model_evtrim_msrp)
+      sample_cars$msrp_max[i] <- max(model_evtrim_msrp)
+    }
+  
+  #if request returns anything other than a 200 'OK' status code, print the status code to the column values
+  else 
+    {
+      #replace placeholder column values
+      sample_cars$msrp_min[i] <- request$status_code
+      sample_cars$msrp_max[i] <- request$status_code
+    }
+  
+  #pause between requests & vary duration
+  #generate sample within given range
+  sleep_seconds <- sample(1:5,4)
+  #
+  Sys.sleep(sleep_seconds[(i-1) %% length(sleep_seconds)+1])
+  
+}
+
+view(sample_cars)
+```
+
+#Parse URLs in Autotrader XML sitemap
+
+Fetch detailed urls for make/model/year pages from sitemap index
+```{r}
+#get list of urls for relevant portion of the sitemap
+sitemap_index <- read_xml("https://www.autotrader.com/sitemap_mmty.xml.gz")%>%
+  xml_ns_strip()%>% #strip default namespaces to make find_all work
+  xml_find_all("//loc")%>% #target node containing url
+  xml_text()
+
+#check length of list - should be 6
+length(sitemap_index)
+
+#combine results from each selected portion of the sitemap
+
+#create empty list
+#mmty_urls <- list() #QUESTION - IS A LIST THE BEST WAY TO STORE RESULTS OF THE LOOP?
+mmty_urls <- c()
+
+for(i in 1:length(sitemap_index)) {
+  #collect all urls from make/model/trim/year sitemap pages 0-5
+  request <-GET(sitemap_index[i])
+  
+  print(request$status_code)
+  
+  #extract urls from each xml nodelist
+  mmty_sitemap_chunk <- read_xml(request$content)%>%
+    xml_ns_strip()%>% #strip default namespaces to make find_all work
+    xml_find_all("//loc")%>%
+    xml_text()
+
+  #append each set of urls to list
+  mmty_urls <- append(mmty_urls, mmty_sitemap_chunk)
+  
+  #check length of url list
+  print(length(mmty_urls))
+}
+
+print(length(mmty_urls))
+typeof(mmty_urls)
+
+#str_remove_all("https\\:\\/\\/www\\.autotrader.com\\/")%>%
+#str_extract("(?<=sitemap_).*(?=\\.xml\\.gz)")
+#str_remove_all("https\\:\\/\\/www\\.autotrader.com\\/")%>%
+#str_remove_all("\\?styleid=\\d+") 
+
+
+```
+
+Transform into dataframe and parse url strings
+```{r}
+#vector to dataframe
+veh_library <- mmty_urls%>%as.data.frame()
+
+glimpse(veh_library)
+view(veh_library)
+
+#rename column
+colnames(veh_library) <-veh_library%>%
+  colnames()%>%
+  str_replace_all(".","sitemap_url")
+
+#parse urls, extracting fields for: make, model, year
+
+#extract vehicle model year as new column
+veh_library$model_year <- veh_library$sitemap_url%>%
+  str_remove_all("\\?styleid=\\d+")%>% #remove styleid
+  str_extract("\\d{4}$") #vehicle year
+
+#extract vehicle make as new column
+veh_library$make <-veh_library$sitemap_url%>%
+  str_remove_all("\\?styleid=\\d+")%>%
+  str_remove_all("https\\:\\/\\/www\\.autotrader.com\\/")%>%
+  str_extract("^[a-z]+-?[a-z]*")
+
+#extract vehicle model as new column
+veh_library$model <- veh_library$sitemap_url%>%
+  str_remove_all("\\?styleid=\\d+")%>%
+  str_remove_all("https\\:\\/\\/www\\.autotrader.com\\/[a-z]+-?[a-z]*\\/")%>%
+  str_extract("^[a-z 0-9 \\- \\~]*(?=\\/)")
+
+navalues <- c("https://www.autotrader.com/dodge/d~w-truck/150/",
+"https://www.autotrader.com/dodge/ram-3500-truck/st/",
+"https://www.autotrader.com/ford/explorer-sport-trac/xlt/",
+"https://www.autotrader.com/ford/e-350-and-econoline-350/xl/",
+"https://www.autotrader.com/land-rover/range-rover-sport/hse/",
+"https://www.autotrader.com/mazda/mx-5-miata/ls/",
+"https://www.autotrader.com/mercedes-benz/c-63-amg/s/",
+"https://www.autotrader.com/ram/c~v/tradesman/")
+
+navalues%>%
+  str_remove_all("https\\:\\/\\/www\\.autotrader.com\\/[a-z]+-?[a-z]*\\/")%>%
+  str_extract("^[a-z 0-9 \\- \\~]*(?=\\/)")
+
+glimpse(veh_library)
+
+#check how many unique make/model/year vehicles there are - 6838
+veh_library %>% 
+  #filter(make%in%exclude_make==FALSE)%>%
+  select(make, model, model_year) %>%
+  distinct(.keep_all = False) %>%
+  group_by(make)%>%
+  arrange(make, model, model_year, .by_group=TRUE)
+
+#spot check make/model/year for potential typos and N/A values
+
+veh_library%>%
+  filter(make=="tesla")%>%
+  filter(model_year=="2020")
+
+glimpse(veh_library)
+```
+
+
+
+#Notes & Resources
+
+Webscraping Tutorial: rvest
+<https://www.dataquest.io/blog/web-scraping-in-r-rvest/>
+
+Vignette: rvest
+<https://cran.r-project.org/web/packages/rvest/vignettes/harvesting-the-web.html>
+
+ACTUAL Explanation of Using CSS Selectors without Relying on selectorgadget
+<https://www.datacamp.com/community/tutorials/r-web-scraping-rvest>
+
+Webscraping in R: Excellent Overview of CSS vs XPath
+<https://campus.datacamp.com/courses/web-scraping-in-r/navigation-and-selection-with-css?ex=6>
+
+Parsing XML files
+<https://stackoverflow.com/questions/25005565/using-r-to-download-and-read-zipped-xml-file>
+
+Download & Extract .gz files
+<https://stackoverflow.com/questions/28986150/downloading-and-extracting-gz-data-file-using-r>
+<https://www.tutorialspoint.com/r/r_xml_files.htm>
+
+Overview of stringr
+<https://cran.r-project.org/web/packages/stringr/vignettes/stringr.html>
+
+Insert regular expression to generate explanation
+<http://rick.measham.id.au/paste/explain>
+
+XML2 Vignette
+<https://cran.r-project.org/web/packages/xml2/vignettes/modification.html>
+
+Regex to splice URL
+<https://stackoverflow.com/questions/47642504/regular-expression-to-extract-specific-part-of-a-url>
+
+https://community.rstudio.com/t/handling-column-names-from-df-with-spaces/58082
+https://stackoverflow.com/questions/56403392/can-i-remove-whitespace-from-all-column-names-with-dplyr
+https://stackoverflow.com/questions/10688137/how-to-fix-spaces-in-column-names-of-a-data-frame-remove-spaces-inject-dots
+https://stackoverflow.com/questions/36279800/difference-between-paste-and-paste0
+
+https://rdrr.io/cran/rvest/man/html_nodes.html
+https://stackoverflow.com/questions/16371722/select-multiple-child-in-css
+https://stackoverflow.com/questions/912194/matching-a-node-based-on-a-siblings-value-with-xpath/31118801
+https://stackoverflow.com/questions/3655549/xpath-containstext-some-string-doesnt-work-when-used-with-node-with-more
+
+#SCRAPS:Things attempted but did not work or were not the most efficient options
+
+Explored using XML sitemap to select URLs to scrape
+Read in XML sitemap files
+<https://stackoverflow.com/questions/5764499/decompress-gz-file-using-r>
+```{r}
+#Unzip file using gunzip()
+testmap <- gunzip("../data/sitemap_mm.xml.gz", remove=FALSE)
+testmap
+read_xml(testmap)
+```
+
+```{r}
+url <- "https://www.autotrader.com/sitemap_mm_mercedes-benz.xml.gz"
+
+download.file(url, destfile = "../data/sitemap_mm_mb.xml.gz")
+test <- gunzip.default("../data/sitemap_mm_mb.xml.gz")
+data <- read_xml(test)
+glimpse(data)
+data
+```
+
+```{r}
+#sitemap<-
+  
+#ALL MAKES
+read_xml("https://www.autotrader.com/sitemap_mm.xml")%>%
+  xml_ns_strip()%>% #strip default namespaces to make find_all work
+  xml_find_all("//loc")%>%
+  xml_text()
+
+
+#MAKE MODEL TRIM YEAR SITEMAP INDEX
+#0 through 5
+
+read_xml("https://www.autotrader.com/sitemap_mmty.xml.gz")%>%
+  xml_ns_strip()%>% #strip default namespaces to make find_all work
+  xml_find_all("//loc")%>%
+  xml_text()%>%
+  #url_parse()
+  str_remove_all("https\\:\\/\\/www\\.autotrader.com\\/")%>%
+  str_extract("(?<=sitemap_).*(?=\\.xml\\.gz)")
+ 
+
+read_xml("https://www.autotrader.com/sitemap_mmty_0.xml.gz")%>%
+  xml_ns_strip()%>% #strip default namespaces to make find_all work
+  xml_find_all("//loc")%>%
+  xml_text()%>%
+  str_remove_all("https\\:\\/\\/www\\.autotrader.com\\/")%>%
+  str_remove_all("\\?styleid=\\d+")
+
+read_xml("https://www.autotrader.com/sitemap_mmty_1.xml.gz")%>%
+  xml_ns_strip()%>% #strip default namespaces to make find_all work
+  xml_find_all("//loc")%>%
+  xml_text()
+
+read_xml("https://www.autotrader.com/sitemap_mmty_2.xml.gz")%>%
+  xml_ns_strip()%>% #strip default namespaces to make find_all work
+  xml_find_all("//loc")%>%
+  xml_text()
+
+read_xml("https://www.autotrader.com/sitemap_mmty_3.xml.gz")%>%
+  xml_ns_strip()%>% #strip default namespaces to make find_all work
+  xml_find_all("//loc")%>%
+  xml_text()
+
+read_xml("https://www.autotrader.com/sitemap_mmty_4.xml.gz")%>%
+  xml_ns_strip()%>% #strip default namespaces to make find_all work
+  xml_find_all("//loc")%>%
+  xml_text()
+
+read_xml("https://www.autotrader.com/sitemap_mmty_5.xml.gz")%>%
+  xml_ns_strip()%>% #strip default namespaces to make find_all work
+  xml_find_all("//loc")%>%
+  xml_text()
+
+sitemap_mm.xml
+
+request<-GET("https://www.autotrader.com/sitemap_mm_mercedes-benz.xml.gz")
+request$status_code
+
+read_xml(request$content)%>%
+  xml_ns_strip()%>% #strip default namespaces to make find_all work
+  xml_find_all("//url//loc")%>%
+  xml_text()
+
+#Access the request content & render an xml document
+read_xml(request$content)%>%xml_children()
+
+read_xml(request$content)%>% #render xml document
+  xml_contents() #render an xml nodeset
+
+test <- read_xml(request$content)%>% #render xml document
+  xml_contents() #render an xml nodeset
+
+test[3] #examine single node
+test[1]%>%xml_structure() #see structure of each node
+test[3]%>%xml_children() #examine node children
+test[3]%>%xml_name() #verfiy name of the node itself
+test[3]%>%xml_children()%>%xml_name() #verify names of node children
+test[3]%>%xml_children()%>%xml_type() #verify type of each node
+test[3]%>%xml_children()%>%xml_attrs()
+request$content%>%xml_contents()
+
+read_xml(request$content)%>% #render xml document
+  xml_children()%>%
+  xml_find_all(xpath="urlset/url//loc")#%>% #render an xml nodeset
+test[3]%>%xml_nodes(xpath="/url")
+
+read_xml(request$content)
+#%>%url_parse()
+  
+
+
+read_xml(request$content)%>%
+  xml_structure()
+
+read_xml(request$content)%>%
+  xml_contents()%>%
+  xml_children()%>%
+  xml_attrs()
+  #xml_name()
+
+read_xml(request$content)%>%
+  xml_children()%>%
+  xml_children()%>%
+  xml_find_all()
+
+read_xml(request$content)%>%
+  xml_ns_strip()%>% #strip default namespaces to make find_all work
+  xml_find_all("//url//loc")%>%
+  xml_text()
+
+```
+
+
+```{r}
+## Unzip it in the temp folder
+#'../data/sitemap_nsrp_make_model.xml.gz'
+xml_files <- unzip('../data/sitemap_nsrp_make_model.xml.gz', list=TRUE)
+
+## Parse the first file
+doc <- xmlInternalTreeParse(xml_files[1])
+
+#readLines('../data/sitemap_nsrp_make_model.xml.gz')
+
+#MAKE MODEL TRIM YEAR SITEMAP INDEX
+#<https://www.autotrader.com/sitemap_mmty.xml.gz>
+readLines('../data/sitemap_mmty.xml.gz')  
+readLines('../data/sitemap_mmty_0.xml.gz')  #0 through 5
+
+#MAKE MODEL SITEMAP INDEX
+#<https://www.autotrader.com/sitemap_mm.xml.gz>
+readLines('../data/sitemap_mm.xml.gz')
+readLines('../data/sitemap_mm_audi.xml.gz')
+readLines('../data/sitemap_syc_geo.xml.gz')
+```
+
+
+```{r}
+temp <- tempfile()
+
+download.file("https://www.autotrader.com/sitemap_nsrp_make_model.xml.gz", temp)
+gzfile(temp, 'rt')
+
+# Make a temporary file (tf) and a temporary folder (tdir)
+tf <- tempfile(tmpdir = tdir <- tempdir())
+
+## Download the zip file 
+download.file("https://www.autotrader.com/sitemap_nsrp_make_model.xml.gz", tf)
+
+## Unzip it in the temp folder
+xml_files <- unzip(tf, exdir = tdir)
+
+## Parse the first file
+doc <- xmlInternalTreeParse(xml_files[1])
+
+## Delete temporary files
+unlink(tdir, T, T)
+
+```
+
+Example of page with available models by make
+-- Tested this, but not viable. Not every brand overview page includes every model for every production year.
+
+```{r}
+makepage <- read_html("https://www.autotrader.com/bmw")
+
+makepage %>% html_nodes(".col-xs-8.item-card-content.display-flex.flex-column.justify-content-between")%>%html_children()
+
+b<-makepage %>% html_nodes(".item-card-header")
+b
+b[1]%>%html_children()%>%html_attrs()
+b[1]%>%html_text()
+b[1]%>%html_attrs()
+
+b<-makepage %>% html_nodes(".item-card-body.margin-bottom-auto")%>%html_children()%>%html_text()
+b[1:2]
+
+makepage %>% html_nodes(".col-xs-8.item-card-content.display-flex.flex-column.justify-content-between  .item-card-body.margin-bottom-auto") #%>%html_children()
+
+makepage %>% html_nodes(".col-xs-8.item-card-content.display-flex.flex-column.justify-content-between  .item-card-header")
+
+makepage %>% html_nodes(".item-card-header")%>%html_children()
+
+```
+
+##Scrape model-level MSRP price range with CSS selectors
+
+```{r}
+
+#testpage <- read_html("https://www.autotrader.com/kia/soul/2019")
+testpage <- read_html("https://www.autotrader.com/mercedes-benz/e-63-amg/2020")
+#testpage<-read_html("https://www.autotrader.com/chevrolet/bolt/2019")
+
+#Returns all results for nodes selected
+testpage %>% html_nodes("div.text-left.text-size-400.text-bold")%>%html_text()
+
+#Returns the first result, which is the MSRP range
+testpage %>% html_node("div.text-left.text-size-400.text-bold")%>%html_text()
+```
+
+##Scrape trim-level MSRP data with CSS selectors
+Table with engine type and MSRP by model trims
+```{r}
+testpage <- read_html("https://www.autotrader.com/kia/soul/2019")
+
+testpage %>%
+  #Select the table with trim level information
+  html_nodes("table.margin-vertical-sm.margin-collapse-top.table.table-striped.table-bordered")%>%
+  #Render table as dataframe
+  html_table()
+
+testpage %>%
+  #Select the table with trim level information
+  html_nodes("table.margin-vertical-sm.margin-collapse-top.table.table-striped.table-bordered")%>%
+  #Select first 3 columns from the table with pseudo-class selectors
+  html_nodes("tr:nth-child(n)>td:nth-child(-1n+3)")%>%html_text()
+
+
+#Note:Mixing CSS and XPath creates issues with preserving query hierarchy
+testpage %>%
+  #Select the table with trim level information
+  html_node(css="table.margin-vertical-sm.margin-collapse-top.table.table-striped.table-bordered")%>%
+  html_nodes(xpath='//tr')%>%html_text()
+```
+
+```{r}
+length(sample_cars$autotrader_url)
+length(sample_cars$autotrader_url)
+sample_cars$autotrader_url[1]
+sample_cars$autotrader_url[[1]]
+length(sample_cars)
+sample_cars
+
+#Test for loop by printing each row value
+#For index values from 1 to the end of the specified df column
+for(i in 1:length(sample_cars$autotrader_url)) {
+  print(sample_cars$autotrader_url[i])
+}
+
+#Testing sleep duration
+sleep_seconds <- sample(1:5,4)
+for (i in 1:15){
+  print(sleep_seconds[(i-1) %% length(sleep_seconds)+1])
+}
+```
+
+```{r}
+# Use GET instead of read_html()
+result <- GET(autotrader_url)
+
+# Construct a vector of 2 URLs
+urls <- c("http://httpbin.org/status/404","http://httpbin.org/status/301")
+
+for(url in urls){
+    # Send a GET request to url
+    result <- GET(url)
+    # Delay for 5 seconds between requests
+    Sys.sleep(5)
+
+```
