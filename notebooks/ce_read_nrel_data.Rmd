@@ -1,0 +1,130 @@
+---
+title: "ce_read_nrel_data"
+output: html_document
+author: Courtney Everest
+---
+
+Load libraries
+```{r}
+library(tidyverse)
+library(dplyr)
+library(plotly)
+library(ggplot2)
+library(httr)
+library(jsonlite)
+```
+
+
+
+Define NREL (National Renewable Energy Laboratory) API key
+```{r}
+#Save API key to variable
+nrel_api_key <- "jKXom0OzVBggwJsR5f0zZGiJkFshXm1EcjG9QkD9"
+
+#Demo Key for testing
+nrel_demo_key <- "DEMO_KEY"
+
+```
+
+```{r}
+#nrel_path <- "https://developer.nrel.gov/api/alt-fuel-stations/v1"
+
+request <- GET(url = "https://developer.nrel.gov/api/alt-fuel-stations/v1", 
+               query = list(
+                        format='csv',
+                        #api_key='DEMO_KEY',
+                        api_key=nrel_api_key,
+                        fuel_type='ELEC',
+                        state='TN'
+                        #limit=25
+                        )
+               )
+
+#Check response codes
+
+http_status(request) #status_code derived from http_status
+request$status_code  # same as  status_code(request)
+request$headers$`x-ratelimit-remaining` #check remaining limits from the headers
+
+#Examine request object
+content(request)
+View(content(request))
+glimpse(content(request))
+
+#Save request object content to variable
+ev_stations_tn <- content(request)
+ev_stations_tn
+
+```
+```{r}
+request <- GET(url = "https://developer.nrel.gov/api/alt-fuel-stations/v1", 
+               query = list(
+                        format='csv',
+                        api_key=nrel_api_key,
+                        fuel_type='ELEC'
+                        )
+               )
+
+request$status_code  
+request$headers$`x-ratelimit-remaining` 
+
+#Examine request object
+content(request)
+glimpse(content(request))
+
+#Save request object content to variable
+ev_stations_usa <- content(request)
+View(ev_stations_usa)
+```
+
+```{r}
+ev_networks <- distinct_at(ev_stations_usa, 'EV Network')
+
+ev_stations_usa %>%
+  
+
+```
+
+
+Drop unecessary columns
+```{r}
+#Intersection Directions
+#Plus4
+#Expected date
+#Station Phone
+#....(French)
+
+```
+
+Alternative fuel vehicle database
+https://developer.nrel.gov/docs/transportation/vehicles-v1/
+```{r}
+request <- GET("https://developer.nrel.gov/api/vehicles/v1/vehicles.csv?api_key=jKXom0OzVBggwJsR5f0zZGiJkFshXm1EcjG9QkD9")
+
+request$status_code  
+request$headers$`x-ratelimit-remaining` 
+
+#Examine request object
+content(request)
+glimpse(content(request))
+
+#Save request object content to variable
+altfuel_vehicles <- content(request)
+View(alt_fuel_vehicles)
+```
+
+
+```{r}
+request <- GET("https://developer.nrel.gov/api/vehicles/v1/light_duty_automobiles.csv?api_key=jKXom0OzVBggwJsR5f0zZGiJkFshXm1EcjG9QkD9")
+
+request$status_code  
+request$headers$`x-ratelimit-remaining` 
+
+#Examine request object
+content(request)
+glimpse(content(request))
+
+#Save request object content to variable
+light_duty_altfuel <- content(request)
+View(light_duty_altfuel)
+```
