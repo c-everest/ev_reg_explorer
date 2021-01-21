@@ -1,0 +1,191 @@
+---
+title: "ce_read_hhi_data"
+output: html_document
+date: 1/7/21
+---
+
+## Read in household income data by Census tract from ACS5 2019
+
+```{r cars}
+library(tidycensus)
+library(tidyverse)
+library(dplyr)
+library(plotly)
+library(ggplot2)
+library(readxl)
+library(leaflet)
+library(sf)
+```
+
+```{r}
+# Check your API key
+Sys.getenv("CENSUS_API_KEY")
+```
+Pull in ACS5 2019 Subject Table variables
+```{r}
+var_19_acs5_sub <- load_variables(year=2019, dataset="acs5/subject",cache=TRUE)
+View(var_19_acs5_sub)
+
+```
+
+Tidycensus has a built in table of counties/states and FIPS codes.
+```{r}
+
+tidycensus::fips_codes
+
+view(fips_codes%>%
+    select(state, state_code) %>%
+    distinct(.keep_all = False))
+
+state_code_list <- pull(fips_codes %>%
+                          select(state_code)%>%
+                          distinct(.keep_all = FALSE), #dedupe state_code column
+                        state_code
+                        )[1:51] #exclude US territories
+
+```
+Read in selected variables ACS5 2019 Subject Table S1901
+```{r}
+#s1901_vars <- c(total_households="S1901_C01_001", median_hhi = "S1901_C01_012",mean_hhi="S1901_C01_013")
+#acs5_19_s1901
+
+census_hhi <-get_acs(survey = "acs5",
+                        year=2019, 
+                        #table="S1901",
+                        variables=c(total_households="S1901_C01_001",
+                                     median_hhi = "S1901_C01_012",
+                                     mean_hhi="S1901_C01_013"),
+                        geography="tract", 
+                        state=state_code_list,
+                        cache=TRUE)
+                        #show_call=TRUE
+                        #output="wide"
+
+#use colname_cleanup function to standardize column names and make lowercase
+census_hhi <- colname_cleanup(census_hhi)
+
+glimpse(census_hhi)
+
+write.csv(census_hhi, '../data/census_hhi_df.csv', row.names = FALSE)
+```
+
+
+```{r}
+tn_hhi_g <-get_acs(survey = "acs5",
+                        year=2019, 
+                        #table="S1901",
+                        variables=c(total_households="S1901_C01_001",
+                                     median_hhi = "S1901_C01_012",
+                                     mean_hhi="S1901_C01_013"),
+                        geography="tract", 
+                        state="TN",
+                        cache=TRUE,
+                        geometry = TRUE)%>%
+                  colname_cleanup()
+head(tn_hhi_g)
+glimpse(tn_hhi_g)
+class(tn_hhi_g) #sf data.frame
+summary(tn_hhi_g)
+
+#st_write(tn_hhi_g, paste0(tempdir(), "../data", "nc.shp"))
+st_write(tn_hhi_g, '../data/tn_hhi_g.shp', row.names = FALSE)
+
+test_read <- st_read("../data/tn_hhi_g.shp")
+glimpse(test_read)
+class(test_read)
+```
+#TOO BIG TO READ IN ALL AT ONCE
+```{r}
+#census_hhi_g <-get_acs(survey = "acs5",
+                       # year=2019, 
+                        #table="S1901",
+                       # variables=c(total_households="S1901_C01_001",
+                                    # median_hhi = "S1901_C01_012",
+                                    # mean_hhi="S1901_C01_013"),
+                       #geography="tract",
+                      # state=state_code_list,
+                       #geometry=TRUE,
+                      # cache=TRUE)
+
+#glimpse(census_hhi_g)
+#view(census_hhi_g)
+```
+
+Test plotting Davidson County with ggplotly
+```{r}
+p<-tn_hhi_g %>%
+  filter(variable=="median_hhi") %>%
+  filter(str_detect(name,"Davidson County")) %>%
+  ggplot(aes(fill=estimate)) +
+  geom_sf(color=NA) +
+  #coord_sf(crs=)
+  scale_fill_viridis_c(option="plasma",
+                       labels=scales::dollar)+
+  theme_minimal() +
+  labs(title="Tract-Level Median HHI",
+       fill= "Median HHI")
+
+fig <- ggplotly(p) 
+fig
+```
+Test plotting Davidson County with Leaflet.
+```{r}
+
+tn_pal <- colorNumeric(palette = "viridis",
+                       domain=tn_hhi_g$estimate)
+
+tn_hhi_g%>%
+  filter(variable=="median_hhi") %>%
+  leaflet()%>%
+  addTiles()%>%
+  addPolygons(stroke=FALSE,
+              fillOpacity=0.8,
+              smoothFactor = 0.5,
+              color= ~tn_pal(estimate),
+              label = ~paste0("Median HHI: ", estimate),
+              highlight = highlightOptions(weight=3,
+                                           color="red",
+                                           bringToFront = TRUE))%>%
+  setView(lng= -86.7833322,
+          lat=36.1500571,
+          zoom=9)
+
+dollar()
+```
+
+
+
+Test plotting State of TN
+```{r}
+p <- s1901g_tn %>%
+  filter(variable=="median_hhi") %>%
+  #filter(str_detect(NAME,"Davidson County")) %>%
+  ggplot(aes(fill=estimate)) +
+  geom_sf(color=NA) +
+  #coord_sf(crs=)
+  scale_fill_viridis_c(option="plasma",
+                       labels=scales::dollar)+
+  theme_minimal() +
+  labs(title="Tract-Level Median HHI",
+       fill= "Median HHI")
+
+fig <- ggplotly(p)
+fig
+```
+
+Read in TN tract shapefile
+```{r}
+tn_tract_shape <- st_read("../data/tl_2019_47_tract/tl_2019_47_tract.shp")%>%
+  colname_cleanup()
+glimpse(tn_tract_shape)
+class(tn_tract_shape)
+#view(tn_tract_shape)
+```
+
+
+#Links & Sources
+
+<https://mattherman.info/blog/tidycensus-mult/>
+< https://cran.r-project.org/web/packages/tmap/vignettes/tmap-getstarted.html >
+< https://github.com/walkerke/tidycensus/issues/72 > 
+< https://sonoshah.github.io/tidycensuspresentation/slides#53 > 
