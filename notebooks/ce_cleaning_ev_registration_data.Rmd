@@ -1,6 +1,7 @@
 ---
-title: "ce_cleaning_ihs_ev_registrations"
+title: "ce_cleaning_registration_data"
 output: html_document
+description: Read and clean data on vehicle registrations
 ---
 
 Load libraries
@@ -14,26 +15,9 @@ library(httr)
 library(stringr)
 ```
 
-Read in CSV file with EV registrations for TN & GA Jan 2015-Oct 2020
+Define custom function to cleanup column names of files exported from data provider
 ```{r}
-tnga_ev_reg <- read_csv('../data/ev_tn_ga_2015_2020.csv')
-view(tnga_ev_reg)
-glimpse(tnga_ev_reg)
-
-tnga_ev_reg<-colname_cleanup(tnga_ev_reg)
-glimpse(tnga_ev_reg)
-```
-
-Read in CSV file with nationwide EV registrations Jan 2015-Oct 2020
-Format column names
-```{r}
-us_ev_reg <- read_csv('../data/retail_ev_us_15_20.csv')
-#view(us_ev_reg)
-glimpse(us_ev_reg)
-
-colnames(us_ev_reg)
-
-#Define custom function to cleanup column names of files exported from IHS Markit
+#custom function to cleanup column names
 colname_cleanup <- function(x) {
     colnames(x) <- x %>%
       colnames() %>%
@@ -43,66 +27,248 @@ colname_cleanup <- function(x) {
     ;x 
     }
 
-us_ev_reg <-colname_cleanup(us_ev_reg)
-#str_replace("vehicle_count_calendar_","vehs_reg_")
+```
+
+
+Read in CSV file with EV registrations for TN & GA Jan 2015-Oct 2020
+```{r}
+tnga_ev_reg <- read_csv('../data/ev_tn_ga_2015_2020.csv')
+glimpse(tnga_ev_reg)
+
+tnga_ev_reg<-colname_cleanup(tnga_ev_reg)
+glimpse(tnga_ev_reg)
 
 ```
 
-Select unique make/model/year combinations
-
-https://stackoverflow.com/questions/11369961/subset-with-unique-cases-based-on-multiple-columns
-https://stackoverflow.com/questions/7790732/unique-for-more-than-one-variable
-https://stackoverflow.com/questions/34444295/how-to-specify-does-not-contain-in-dplyr-filter
+Read in CSV file with nationwide EV registrations Jan 2015-Oct 2020
 ```{r}
-#TEST DATA SET
-#ev_reg[!duplicated(ev_reg[4:6]),]%>%select(Make, Model,'Model Year')
+#remove spaces, slashes and uppercase characters
+us_ev_reg <- read_csv('../data/retail_ev_us_15_20.csv')%>%
+  colname_cleanup()
 
-#filter(location%in%input$location)%>%
+#List makes that should be excluded to use as filter
+exclude_make <- c("BYD TRANSIT","GEM", "KALMAR", "LION BUS","MITSUBISHI FUSO")
+us_ev_reg <- us_ev_reg%>%
+  filter(make %in% exclude_make == FALSE)
 
-exclude_make <- c("GEM", "KALMAR", "MITSUBISHI FUSO")
-tnga_ev_models <- tnga_ev_reg %>% 
-  filter(Make%in%exclude_make==FALSE)%>%
-  select(Make,Model,'Model Year') %>%
-  distinct(.keep_all = False) %>%
-  group_by(Make)
+#shorten column names
+colnames(us_ev_reg) <- colnames(us_ev_reg)%>%
+  str_replace_all("vehicle_count_calendar_year", "reg")%>%
+  str_replace_all("vehicle_count_calendar", "reg")%>%
+  str_replace("census_tracts","geoid")
 
-View(tnga_ev_models %>%
-  arrange(Make, Model, 'Model Year',.by_group=TRUE)
-)
+glimpse(us_ev_reg)
 
-arrange(tnga_ev_models,'Model Year', .by_group = FALSE)
+#Write to CSV
+write.csv(us_ev_reg, '../data/us_ev_reg_df.csv', row.names = FALSE)
 ```
 
+Read in CSV file with (aggregated) nationwide registrations by fuel type Jan 2015-Nov 2020
 ```{r}
-#US EV REGISTRATION DATA
+#remove spaces, slashes and uppercase characters
+fueltype_reg <- read_csv('../data/fueltype_reg_2015_2020.csv')%>%
+  colname_cleanup()
+
+#shorten column names
+colnames(fueltype_reg) <- colnames(fueltype_reg)%>%
+  str_replace_all("_vehicle_count", "")%>%
+  str_replace_all("calendar_year", "reg")%>%
+  str_replace_all("calendar_ytd", "reg")%>%
+  str_replace("census_tracts","geoid")
+
+glimpse(fueltype_reg)
+fueltype_reg
+
+#Write to CSV
+write.csv(fueltype_reg, '../data/fueltype_reg_sum_df.csv', row.names = FALSE)
+
+```
+
+Read in CSV file with (aggregated) nationwide mmy registrations by fuel type Jan 2015-Nov 2020
+```{r}
+#remove spaces, slashes and uppercase characters
+mmy_fuel_reg <- read_csv('../data/mmy_fuel_reg_15_20.csv')%>%
+  colname_cleanup()
+
+#List makes that should be excluded to use as filter
+exclude_make <- c("ADVANCE MIXER",
+                  "AMERICAN LAFRANCE",
+                  "AUTOCAR",
+                  "BYD TRANSIT",
+                  "GEM", 
+                  "KALMAR", 
+                  "LION BUS",
+                  "MITSUBISHI FUSO",
+                  "CAPACITY OF TEXAS", 
+                  "CATERPILLAR",
+                  "CRANE CARRIER",
+                  "ELDORADO",
+                  "EMERGENCY ONE",
+                  "FERRARA",
+                  "FREIGHTLINER",
+                  "GILLIG",
+                  "HENDRICKSON",
+                  "HINO",
+                  "IC CORP",
+                  "INTERNATIONAL",
+                  "ISUZU",
+                  "KENWORTH",
+                  "KIMBLE",
+                  "KOVATCH",
+                  "MACK",
+                  "NISSAN UD",
+                  "OSHKOSH",
+                  "PETERBILT",
+                  "PIERCE",
+                  "ROADMASTER RAIL",
+                  "ROSENBAUER",
+                  "SPARTAN MOTORS",
+                  "SUZUKI",
+                  "TEMSA",
+                  "THOMAS BUILT BUSES",
+                  "WESTERN STAR",
+                  "WORKHORSE")
+
+mmy_fuel_reg <- mmy_fuel_reg%>%
+  filter(make %in% exclude_make == FALSE)
+
+#shorten column names
+colnames(mmy_fuel_reg) <- colnames(mmy_fuel_reg)%>%
+  str_replace_all("_vehicle_count", "")%>%
+  str_replace_all("calendar_year", "reg")%>%
+  str_replace_all("calendar_ytd", "reg")
+
+glimpse(mmy_fuel_reg)
+head(mmy_fuel_reg)
+#dedupe_mmy(mmy_fuel_reg)%>%
+ # select(ihs_make)%>%
+  #distinct(.keep_all = False)
+
+#Write to CSV
+write.csv(mmy_fuel_reg, '../data/mmy_fuel_reg.csv', row.names = FALSE)
+```
+
+
+#Read in 2019 registrations of gasoline vehicles for TN
+```{r}
+tn_gas_reg_19 <- read_csv('../data/gas_reg_tn_2019.csv')%>%
+  colname_cleanup()%>%
+  mutate(fuel="gasoline")
+
+colnames(tn_gas_reg_19) <- colnames(tn_gas_reg_19)%>%
+  str_replace_all("calendar_year", "reg")%>%
+  str_replace_all("_vehicle_count", "")%>%
+  str_replace("census_tracts","geoid")
+
+glimpse(tn_gas_reg_19)
+write.csv(tn_gas_reg_19, '../data/tn_gas_reg_19_df.csv', row.names = FALSE)
+```
+
+Define function to de-dupe make/model/year entries in IHS registration data 
+
+```{r}
 
 #List makes that should be excluded to use as filter
 exclude_make <- c("BYD TRANSIT","GEM", "KALMAR", "LION BUS","MITSUBISHI FUSO")
 
-us_ev_models <- us_ev_reg %>% 
-  filter(make%in%exclude_make==FALSE)%>%
-  select(make, model, model_year) %>%
-  distinct(.keep_all = False) %>%
-  group_by(make)%>%
-  arrange(make, model, model_year, .by_group=TRUE)
+#(f) for distinct make/model/year values
 
-class(unique(us_ev_models$make))
+dedupe_mmy <- function(x) {
+  x <- x %>%
+    filter(make %in% exclude_make == FALSE) %>%
+    select(make, model, model_year) %>%
+    distinct(.keep_all = False) %>%
+    group_by(make) %>%
+    arrange(make, model, model_year, .by_group=TRUE)%>%
+    rename(ihs_make = make, ihs_model = model)
+  ;x
+  }
 
-ev_makes <- unique(us_ev_models$make)
-ev_makes
-
-ev_models <- unique(us_ev_models$model)
-ev_models
-view(ev_models)
-
-#mustang-mach-e instead of mustang mach-e
-#smart instead of smartcar
-#model-3 vs model 3
-#kia soul vs kia soul ev
-#rav4 vs rav4 ev
-#/mini/cooper/2020
 ```
 
+Apply de-dupe function to US EV registration data
+```{r}
+
+#US registrations
+us_ev_mmy <- dedupe_mmy(us_ev_reg)
+
+glimpse(us_ev_mmy)
+view(us_ev_mmy)
+
+#Tn & GA registrations - smaller data set to use for testing if necessary
+#tnga_ev_models<- dedupe_mmy(tnga_ev_reg)
+#View(tnga_ev_models)
+#glimpse(tnga_ev_models)
+```
+
+Check make and model column for formatting differences with Autotrader data. 
+```{r}
+#Dataframe of makes
+ev_ihs_makes <- unique(us_ev_mmy$ihs_make)
+length(ev_ihs_makes)
+view(ev_ihs_makes)
+
+#Dataframe of models
+ev_ihs_models <- unique(us_ev_mmy$ihs_model)
+length(ev_ihs_models)
+view(ev_ihs_models)
+
+```
+
+Copy make & model columns to match Autotrader string formatting & generate URL.
+```{r}
+
+us_ev_mmy<-us_ev_mmy %>%
+  #create columns for autotrader make and model, cast to lowercase & normalize formatting
+  mutate(autdr_make = 
+           str_to_lower(ihs_make)%>% 
+           str_replace("smartcar","smart"), #smart instead of smartcar
+         autdr_model=
+           str_to_lower(ihs_model)%>%
+           str_remove(" ev")%>% #kia soul vs kia soul ev
+           str_remove("mini ")%>% #cooper vs mini cooper
+           str_replace(" ","-") #model-3 vs model 3, #mustang-mach-e 
+           )%>%
+  #add column, constructing vehicle url on autotrader.com
+  mutate(
+    autotrader_url=paste(
+      'https://www.autotrader.com', autdr_make, autdr_model, model_year, sep = '/')
+    )
+
+view(us_ev_mmy) 
+```
+
+Write to CSV
+```{r}
+write.csv(us_ev_mmy, '../data/us_ev_mmy.csv', row.names = FALSE)
+```
+
+
+#LINKS & RESOURCES
+
+https://stackoverflow.com/questions/11369961/subset-with-unique-cases-based-on-multiple-columns
+https://stackoverflow.com/questions/7790732/unique-for-more-than-one-variable
+https://stackoverflow.com/questions/34444295/how-to-specify-does-not-contain-in-dplyr-filter
+
+#SCRAPS - unused/sample code
+
+How many census tracts in US have EV registrations?
+```{r}
+length(us_ev_reg$census_tracts %>% unique())
+```
+How many Honda Clarity registrations are there in this set?
+```{r}
+us_ev_reg %>%
+  select(!state)%>%
+  select(!county)%>%
+  select(!census_tracts)%>%
+  select(!model_year)%>%
+  group_by(model)%>%
+  filter(model=="CLARITY")%>%
+  summarise_if(is.numeric, sum, na.rm=TRUE)%>%
+  mutate(total_registrations=rowSums(select(., starts_with("vehicle"))))
+    
+```
 
 Read in file with sample vehicle data
 ```{r}
@@ -111,7 +277,6 @@ view(sample_cars)
 glimpse(sample_cars)
 ```
 
-#SCRAPS - unused/sample code
 ```{r}
 #Original function for replacing space with underscore in column names
 spaceless <- function(x) {colnames(x) <- gsub(" ", "_", colnames(x));x}
@@ -124,5 +289,9 @@ colname_cleanup <- function(x) {
   ;x}
 
 
+
+#ev_reg[!duplicated(ev_reg[4:6]),]%>%select(Make, Model,'Model Year')
+
+#filter(location%in%input$location)%>%
 ```
 
