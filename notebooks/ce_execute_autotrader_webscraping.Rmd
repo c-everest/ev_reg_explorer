@@ -1,0 +1,98 @@
+---
+title: "ce_execute_autotrader_webscraping"
+output: html_document
+date: 1/9/21
+description: Run webscraping code separately from all the webscraping testing & exploration code.
+---
+
+Load libraries
+```{r}
+library(tidyverse)
+library(dplyr)
+library(plotly)
+library(ggplot2)
+library(httr)
+library(stringr)
+library(rvest)
+library(xml2)  #XML package no longer maintained. xml2 is a newer wrapper
+#library(R.utils)
+```
+
+Read in file with vehicle data that's been prepped
+```{r}
+us_ev_msrp<- read_csv('../data/us_ev_mmy.csv')
+view(us_ev_msrp)
+glimpse(us_ev_msrp)
+```
+
+#Execute webscraping
+```{r}
+#Create column in dataframe and fill with placeholder values
+us_ev_msrp$msrp_min <- 'x'
+us_ev_msrp$msrp_max <- 'y'
+
+#Scrape MSRP info with for loop
+for(i in 1:length(us_ev_msrp$autotrader_url)) {
+  #Call the vehicle's specific URL
+  request <-GET(us_ev_msrp$autotrader_url[i])
+  
+  #check the status code
+  request$status_code
+  
+  #if request is successful, proceed to scraping the page
+  if (request$status_code==200)
+    {
+      #extract msrp range for all trim levels with electric motors
+      model_evtrim_msrp<-content(request)%>%
+        #select table containing vehicle trim data
+        html_nodes(xpath='//div[@data-cmp="trims"]//table//tbody')%>%
+        #select rows where td child element is "Electric" and extract td element in MSRP column
+        html_nodes(xpath = '//tr[td[text()="Electric"]]/td[position()=2]')%>%
+        #format as text
+        html_text()%>%
+        #remove dollar sign from MSRP entries
+        str_replace("\\$","")%>%
+        #remove comma from MSRP entries
+        str_replace(",","")%>%
+        #extract digits of MSRPs
+        str_extract("\\d{4,6}")%>%
+        #change from string to numeric
+        as.numeric()
+      
+      #replace placeholder column values with min and max msrp
+      us_ev_msrp$msrp_min[i] <- min(model_evtrim_msrp)
+      us_ev_msrp$msrp_max[i] <- max(model_evtrim_msrp)
+    }
+  
+  #else if request returns anything other than a 200 'OK' status code, print the status code to the column values
+  else 
+    {
+      #replace placeholder column values
+      us_ev_msrp$msrp_min[i] <- request$status_code
+      us_ev_msrp$msrp_max[i] <- request$status_code
+    }
+  
+  #pause between requests & vary duration
+  #generate sample within given range
+  sleep_seconds <- sample(1:5,4)
+  #
+  Sys.sleep(sleep_seconds[(i-1) %% length(sleep_seconds)+1])
+  
+}
+
+glimpse(us_ev_msrp)
+
+view(us_ev_msrp)
+```
+
+Write to CSV
+```{r}
+write.csv(us_ev_msrp, '../data/us_ev_msrp.csv')
+```
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+
+
