@@ -97,30 +97,7 @@ max(x)
 
 ```
 
-#Format sample data to test webscraping
-```{r}
-sample_cars<- read_csv('../data/test_vehicle_data.csv')%>%select(Make, Model,'Model Year')
-view(sample_cars)
 
-#Define function for replacing space with underscore in column names
-spaceless <- function(x) {colnames(x) <- gsub(" ", "_", colnames(x));x}
-
-#Apply function and then use rename_all() to change to lowercase
-sample_cars <- spaceless(sample_cars) %>% rename_all(tolower)
-
-#Select all character values and cast to lowercase
-  #Do this rather than using base R tolower, which makes ALL values including numeric into character values before changing case
-sample_cars <- sample_cars%>%
-  mutate_if(is.character, str_to_lower) 
-
-#Add column, constructing the vehicle URL on autotrader.com 
-sample_cars <- sample_cars %>%
-  mutate(
-    autotrader_url = paste(
-      'https://www.autotrader.com', make, model, model_year, sep = '/')
-  )
-
-```
 
 #Webscraping function
 ```{r}
@@ -234,7 +211,7 @@ Transform into dataframe and parse url strings
 #vector to dataframe
 veh_library <- mmty_urls%>%as.data.frame()
 
-glimpse(veh_library)
+glimpse(veh_library) #~52k rows
 view(veh_library)
 
 #rename column
@@ -261,6 +238,7 @@ veh_library$model <- veh_library$sitemap_url%>%
   str_remove_all("https\\:\\/\\/www\\.autotrader.com\\/[a-z]+-?[a-z]*\\/")%>%
   str_extract("^[a-z 0-9 \\- \\~]*(?=\\/)")
 
+#there are still some na values. identify anomalies and update code
 navalues <- c("https://www.autotrader.com/dodge/d~w-truck/150/",
 "https://www.autotrader.com/dodge/ram-3500-truck/st/",
 "https://www.autotrader.com/ford/explorer-sport-trac/xlt/",
@@ -618,5 +596,30 @@ for(url in urls){
     result <- GET(url)
     # Delay for 5 seconds between requests
     Sys.sleep(5)
+
+```
+
+#Format sample data to test webscraping
+```{r}
+sample_cars<- read_csv('../data/test_vehicle_data.csv')%>%select(Make, Model,'Model Year')
+view(sample_cars)
+
+#Define function for replacing space with underscore in column names
+spaceless <- function(x) {colnames(x) <- gsub(" ", "_", colnames(x));x}
+
+#Apply function and then use rename_all() to change to lowercase
+sample_cars <- spaceless(sample_cars) %>% rename_all(tolower)
+
+#Select all character values and cast to lowercase
+  #Do this rather than using base R tolower, which makes ALL values including numeric into character values before changing case
+sample_cars <- sample_cars%>%
+  mutate_if(is.character, str_to_lower) 
+
+#Add column, constructing the vehicle URL on autotrader.com 
+sample_cars <- sample_cars %>%
+  mutate(
+    autotrader_url = paste(
+      'https://www.autotrader.com', make, model, model_year, sep = '/')
+  )
 
 ```
