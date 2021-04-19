@@ -26,13 +26,7 @@ Pull in ACS5 2019 Subject Table variables
 var_19_acs5_sub <- load_variables(year=2019, dataset="acs5/subject",cache=TRUE)
 View(var_19_acs5_sub)
 
-
 ```
-```{r}
-co_mmy_fuel<- read_csv('../data/co_mmy_fuel_df.csv')
-
-```
-
 
 Tidycensus has a built in table of counties/states and FIPS codes.
 ```{r}
@@ -51,32 +45,7 @@ state_code_list <- pull(fips_codes %>%
 
 ```
 
-Read in selected variables ACS5 2019 Subject Table S1901 - national
-```{r}
-#s1901_vars <- c(total_households="S1901_C01_001", median_hhi = "S1901_C01_012",mean_hhi="S1901_C01_013")
-#acs5_19_s1901
-
-census_hhi <-get_acs(survey = "acs5",
-                        year=2019, 
-                        #table="S1901",
-                        variables=c(total_households="S1901_C01_001",
-                                     median_hhi = "S1901_C01_012",
-                                     mean_hhi="S1901_C01_013"),
-                        geography="tract", 
-                        state=state_code_list,
-                        cache=TRUE)%>%
-                      colname_cleanup()
-                        #show_call=TRUE
-                        #output="wide"
-
-#use colname_cleanup function to standardize column names
-#census_hhi <- colname_cleanup(census_hhi)
-
-glimpse(census_hhi)
-
-```
-
-Read in TN data, with polygon boundaries
+Read in selected variables ACS5 2019 Subject Table S1901 for TN, with polygon boundaries
 ```{r}
 tn_hhi_g <-get_acs(survey = "acs5",
                         year=2019, 
@@ -95,7 +64,7 @@ glimpse(tn_hhi_g)
 class(tn_hhi_g)
 #view(tn_hhi_g)
 ```
-Plotly - Test plotting Davidson County
+Test plotting Davidson County Census data : Plotly
 ```{r}
 p<-tn_hhi_g %>%
   filter(variable=="median_hhi") %>%
@@ -119,26 +88,7 @@ Sys.setenv("plotly_api_key"="V6TM2axFVMohJrseeMna")
 
 #api_create(fig, filename = "median_hhi_davidson_co_tract")
 ```
-
-Plotly - Test plotting State of TN
-```{r}
-p <- tn_hhi_g %>%
-  filter(variable=="median_hhi") %>%
-  #filter(str_detect(NAME,"Davidson County")) %>%
-  ggplot(aes(fill=estimate)) +
-  geom_sf(color=NA) +
-  #coord_sf(crs=)
-  scale_fill_viridis_c(option="plasma",
-                       labels=scales::dollar)+
-  theme_minimal() +
-  labs(title="Tract-Level Median HHI",
-       fill= "Median HHI")
-
-fig <- ggplotly(p)
-fig
-```
-
-Leaflet - test plotting TN Census data
+Test plotting TN Census data - Leaflet
 
 ```{r}
 
@@ -171,27 +121,3 @@ tn_map_df%>%
 
 
 ```
-
-
-```{r}
-glimpse(tn_hhi_g)
-```
-
-
-Read in spatial file with census tract boundaries
-https://gis.stackexchange.com/questions/19064/opening-shapefile-in-r
-```{r}
-shape <- read_sf( "../data/cb_2019_us_tract_500k/cb_2019_us_tract_500k.shp")
-
-class(shape)
-view(shape)
-
-```
-
-
-#Links & Sources
-
-<https://mattherman.info/blog/tidycensus-mult/>
-< https://cran.r-project.org/web/packages/tmap/vignettes/tmap-getstarted.html >
-< https://github.com/walkerke/tidycensus/issues/72 > 
-< https://sonoshah.github.io/tidycensuspresentation/slides#53 > 
