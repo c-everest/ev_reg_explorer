@@ -19,7 +19,9 @@ library(jsonlite)
 Define NREL (National Renewable Energy Laboratory) API key
 ```{r}
 #Save API key to variable
-nrel_api_key <- "jKXom0OzVBggwJsR5f0zZGiJkFshXm1EcjG9QkD9"
+
+
+Sys.getenv("nrel_api_key")
 
 #Demo Key for testing
 nrel_demo_key <- "DEMO_KEY"
@@ -56,6 +58,7 @@ ev_stations_tn <- content(request)
 ev_stations_tn
 
 ```
+
 ```{r}
 request <- GET(url = "https://developer.nrel.gov/api/alt-fuel-stations/v1", 
                query = list(
@@ -105,7 +108,7 @@ request$status_code
 request$headers$`x-ratelimit-remaining` 
 
 #Examine request object
-content(request)
+view(content(request))
 glimpse(content(request))
 
 #Save request object content to variable

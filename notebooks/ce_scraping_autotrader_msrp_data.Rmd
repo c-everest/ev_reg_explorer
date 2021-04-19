@@ -42,7 +42,7 @@ model_evtrim_msrps<-testpage%>%
   #Select table containing vehicle trim data
   html_nodes(xpath='//div[@data-cmp="trims"]//table//tbody')%>%
   #Select rows td child element is "Electric" and extract td element in MSRP column
-  html_nodes(xpath = '//tr[td[text()="Electric"]]/td[position()=2]')%>%
+  html_nodes(xpath = '//tr[td[text()="!Electric"]]/td[position()=2]')%>%
   html_text()
 
 length(model_evtrim_msrps)
@@ -65,7 +65,7 @@ model_evtrim_msrps<-content(request)%>%
   #Select rows td child element is "Electric" and extract td element in MSRP column
   html_nodes(xpath = '//tr[td[text()="Electric"]]/td[position()=2]')%>%
   html_text()
-
+model_evtrim_msrps
 ```
 
 #Extract the range of MSRP values
@@ -162,7 +162,8 @@ view(sample_cars)
 Fetch detailed urls for make/model/year pages from sitemap index
 ```{r}
 #get list of urls for relevant portion of the sitemap
-sitemap_index <- read_xml("https://www.autotrader.com/sitemap_mmty.xml.gz")%>%
+#sitemap_index <- read_xml("https://www.autotrader.com/sitemap_mmty.xml.gz")%>%
+sitemap_index <- read_xml('../data/sitemap_mmty.xml')%>%
   xml_ns_strip()%>% #strip default namespaces to make find_all work
   xml_find_all("//loc")%>% #target node containing url
   xml_text()
@@ -202,7 +203,6 @@ typeof(mmty_urls)
 #str_extract("(?<=sitemap_).*(?=\\.xml\\.gz)")
 #str_remove_all("https\\:\\/\\/www\\.autotrader.com\\/")%>%
 #str_remove_all("\\?styleid=\\d+") 
-
 
 ```
 
@@ -255,7 +255,7 @@ navalues%>%
 glimpse(veh_library)
 
 #check how many unique make/model/year vehicles there are - 6838
-veh_library %>% 
+veh_library <- veh_library %>% 
   #filter(make%in%exclude_make==FALSE)%>%
   select(make, model, model_year) %>%
   distinct(.keep_all = False) %>%
@@ -270,8 +270,11 @@ veh_library%>%
 
 glimpse(veh_library)
 ```
-
-
+Vehicle Library
+Write to CSV
+```{r}
+write.csv(veh_library, '../data/veh_library.csv', row.names = FALSE)
+```
 
 #Notes & Resources
 

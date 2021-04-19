@@ -84,7 +84,7 @@ write.csv(fueltype_reg, '../data/fueltype_reg_sum_df.csv', row.names = FALSE)
 
 ```
 
-Read in CSV file with (aggregated) nationwide mmy registrations by fuel type Jan 2015-Nov 2020
+Formatting
 ```{r}
 #remove spaces, slashes and uppercase characters
 mmy_fuel_reg <- read_csv('../data/mmy_fuel_reg_15_20.csv')%>%
@@ -148,11 +148,10 @@ head(mmy_fuel_reg)
 write.csv(mmy_fuel_reg, '../data/mmy_fuel_reg.csv', row.names = FALSE)
 ```
 
-
 #Read in 2019 registrations of gasoline vehicles for TN
 ```{r}
 tn_gas_reg_19 <- read_csv('../data/gas_reg_tn_2019.csv')%>%
-  colname_cleanup()%>%
+  colname_cleanup()
   mutate(fuel="gasoline")
 
 colnames(tn_gas_reg_19) <- colnames(tn_gas_reg_19)%>%
@@ -294,4 +293,6 @@ colname_cleanup <- function(x) {
 
 #filter(location%in%input$location)%>%
 ```
+
+
 
