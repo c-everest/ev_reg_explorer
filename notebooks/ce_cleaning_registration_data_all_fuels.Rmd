@@ -1,0 +1,317 @@
+---
+title: "ce_cleaning_registration_data_all_fuels"
+output: html_document
+description: Read and clean data on vehicle registrations - new vehicle registrations including all fuel types.
+---
+
+Load libraries
+```{r}
+library(tidyverse)
+library(dplyr)
+library(plotly)
+library(ggplot2)
+library(httr)
+#library(jsonlite)
+library(stringr)
+library(rvest)
+library(xml2) 
+```
+Define function to cleanup column names of files exported from data provider
+```{r}
+#custom function to cleanup column names
+colname_cleanup <- function(x) {
+    colnames(x) <- x %>%
+      colnames() %>%
+      str_to_lower() %>% #make colnames lowercase
+      str_replace_all(" ", "_") %>% #replace spaces with underscores
+      str_replace_all("\\/", "_") %>% #replace slashes with underscores
+      str_replace_all("calendar_year_\\d{4}_vehicle_count", "vehs_reg") %>%
+      str_replace_all("calendar_ytd_\\d{4}_vehicle_count", "vehs_reg")
+    ;x 
+    }
+
+```
+
+List makes & models that should be excluded to use as filter
+```{r}
+exclude_make <- c("ADVANCE MIXER",
+                  "AMERICAN LAFRANCE",
+                  "AUTOCAR",
+                  "BYD TRANSIT",
+                  "GEM", 
+                  "KALMAR", 
+                  "LION BUS",
+                  "MITSUBISHI FUSO",
+                  "CAPACITY OF TEXAS", 
+                  "CATERPILLAR",
+                  "CRANE CARRIER",
+                  "ELDORADO",
+                  "EMERGENCY ONE",
+                  "FERRARA",
+                  "FREIGHTLINER",
+                  "GILLIG",
+                  "HENDRICKSON",
+                  "HINO",
+                  "IC CORP",
+                  "INTERNATIONAL",
+                  "ISUZU",
+                  "KENWORTH",
+                  "KIMBLE",
+                  "KOVATCH",
+                  "MACK",
+                  "NISSAN UD",
+                  "OSHKOSH",
+                  "PETERBILT",
+                  "PIERCE",
+                  "ROADMASTER RAIL",
+                  "ROSENBAUER",
+                  "SPARTAN MOTORS",
+                  "SUZUKI",
+                  "TEMSA",
+                  "TIFFIN",
+                  "THOMAS BUILT BUSES",
+                  "WESTERN STAR",
+                  "WORKHORSE")
+
+exclude_model <- c("LCF","F53 MOTORHOME", "F59", "BUS", "VHD", "VN", "VNR")
+```
+
+Read in files with county-level vehicle registrations by fuel type for 2015-2020
+```{r}
+co_mmy_fuel_19 <- read_csv('../data/county_mmy_fuel_19.csv')%>%
+  colname_cleanup()%>%
+  mutate(reg_year="2019")%>%
+  mutate(reg_year = reg_year%>%as.numeric())
+glimpse(co_mmy_fuel_19)
+
+co_mmy_fuel_20 <- read_csv('../data/county_mmy_fuel_20.csv')%>%
+  colname_cleanup()%>%
+  mutate(reg_year="2020")%>%
+  mutate(reg_year = reg_year%>%as.numeric())
+glimpse(co_mmy_fuel_20)
+
+co_mmy_fuel_18 <- read_csv('../data/county_mmy_fuel_18.csv')%>%
+  colname_cleanup()%>%
+  mutate(reg_year="2018")%>%
+  mutate(reg_year = reg_year%>%as.numeric())
+glimpse(co_mmy_fuel_18)
+
+co_mmy_fuel_17 <- read_csv('../data/county_mmy_fuel_17.csv')%>%
+  colname_cleanup()%>%
+  mutate(reg_year="2017")%>%
+  mutate(reg_year = reg_year%>%as.numeric())
+glimpse(co_mmy_fuel_17)
+
+co_mmy_fuel_16 <- read_csv('../data/county_mmy_fuel_16.csv')%>%
+  colname_cleanup()%>%
+  mutate(reg_year="2016")%>%
+  mutate(reg_year = reg_year%>%as.numeric())
+glimpse(co_mmy_fuel_16)
+
+co_mmy_fuel_15 <- read_csv('../data/county_mmy_fuel_15.csv')%>%
+  colname_cleanup()%>%
+  mutate(reg_year="2015")%>%
+  mutate(reg_year = reg_year%>%as.numeric())
+glimpse(co_mmy_fuel_15)
+
+#Combine each year's data
+co_mmy_fuel <- bind_rows(co_mmy_fuel_20, 
+                         co_mmy_fuel_19, 
+                         co_mmy_fuel_18, 
+                         co_mmy_fuel_17, 
+                         co_mmy_fuel_16, 
+                         co_mmy_fuel_15)%>%
+                filter(make %in% exclude_make == FALSE) #Exclude irrelevant brands
+
+#Adjust fuel names
+co_mmy_fuel$fuel <- co_mmy_fuel$fuel%>%
+  str_replace_all("FLEXIBLE \\(GASOLINE\\/ETHANOL\\)", "FLEX FUEL")%>%
+  str_replace_all("BOTH GAS AND ELECTRIC", "HYBRID")
+
+glimpse(co_mmy_fuel)
+```
+
+County names do not come with FIPS codes. Create geoid key and map against county labels for plotting.
+```{r}
+#Map FIPS codes to county labels using an existing dataset.
+
+county_fips <- read_csv('../data/county_tracts.csv') %>%
+  colname_cleanup() %>% #apply colname cleanup function
+  select(!vehicle_count) %>% #exclude vehicle count column
+  mutate(countyid = census_tracts%>%str_extract("^\\d{5}")) %>% #extract FIPS from tract id
+  select(county, countyid)%>% 
+  distinct(.keep_all = False) #select unique records --> 3,220 county geoids
+ 
+glimpse(county_fips)
+```
+
+Join co_mmy_fuel with county_fips
+```{r}
+#Join dataframes.
+
+co_mmy_fuel <- left_join(co_mmy_fuel, county_fips)%>%
+  select(county, countyid, make, model, model_year, fuel, vehs_reg, reg_year)
+
+#Parse out state identifiers
+co_mmy_fuel <- co_mmy_fuel %>% mutate(state = county%>%str_extract("^([A-Z]{2})*"), #extract state abbreviation
+                                      stateid = countyid %>% str_extract("^\\d{2}") #extract state code
+                                      ) %>%
+                                filter(state!="PR") %>% #exclude Puerto Rico
+  select(state, stateid, county, countyid, make, model, model_year, fuel, vehs_reg, reg_year)
+
+glimpse(co_mmy_fuel)
+```
+
+Write completed co_mmy_fuel dataframe to CSV
+```{r}
+#Write to CSV
+write.csv(co_mmy_fuel, '../data/co_mmy_fuel_df.csv', row.names = FALSE)
+```
+
+
+#Prepare for use in webscraping MSRP data.
+Deduplicate make/model/year/fuel combinations
+```{r}
+dedupe_mmy <- function(x) {
+  x <- x %>%
+    filter(make %in% exclude_make == FALSE) %>%
+    filter(model %in% exclude_model ==FALSE) %>%
+    select(make, model, fuel, model_year) %>%
+    distinct(.keep_all = False) %>%
+    group_by(make) %>%
+    arrange(make, model, model_year, .by_group=TRUE)%>%
+    rename(ihs_make = make, ihs_model = model)
+  ;x
+}
+
+non_ev_models <- co_mmy_fuel%>%dedupe_mmy()%>%  #5.4M rows down to 3531 rows
+  filter(fuel!="ELECTRIC") # down to 3,418 rows
+
+view(non_ev_models)
+glimpse(non_ev_models)
+```
+
+Scroll through makes & models to check for discrepancies with Autotrader formatting
+```{r}
+#Check makes
+makes <- unique(non_ev_models$ihs_make)
+length(makes)  #44 makes
+view(makes)
+
+#check models
+models<- unique(non_ev_models$ihs_model)
+length(models) #487 models
+view(models)
+
+non_ev_models%>%group_by(ihs_make)%>%tally()%>%ungroup()
+
+non_ev_models%>%
+  select(ihs_make, ihs_model, model_year)%>%
+  group_by(ihs_make)%>%
+  tally()%>%
+  ungroup()
+```
+
+
+
+Copy make & model columns to match Autotrader string formatting & generate URL.
+```{r}
+
+non_ev_models<-non_ev_models %>%
+  #create columns for autotrader make and model, cast to lowercase & normalize formatting
+  mutate(autdr_make = 
+           str_to_lower(ihs_make)%>% 
+           str_replace("smartcar","smart")%>% #smart instead of smartcar
+           str_replace(" ","-"), #alfa romeo -> alfa-romeo
+         autdr_model=
+           str_to_lower(ihs_model)%>%
+           str_remove(" ev")%>% #kia soul vs kia soul ev
+           str_remove("mini ")%>% #cooper vs mini cooper
+           str_remove(" denali")%>%
+           str_replace(" ","-")%>% #model-3 vs model 3, #mustang-mach-e
+           str_replace("a4-allroad", "allroad")%>%
+           str_replace("q5-e", "q5")%>%
+           str_replace("trail-blazer", "trailblazer")%>%
+           str_replace("town-& country", "town-&-country")%>%
+           str_replace("458", "458-italia")%>%
+           str_replace("acadia-limited", "acadia")%>%
+           str_replace("xfr", "xf")%>%
+           str_replace("ct200h", "ct-200h")%>%
+           str_replace("4-runner", "4runner")%>%
+           str_replace("mp4", "mp4-12c")%>%
+           str_replace("frontier-/xe", "frontier")%>%
+           str_remove("-plug-in|-ia|-cross country|-sportwagen|-limited|-select|-coupe|-gt|-sedan| sport| xl|-n")%>%
+           str_replace("clubman", "cooper-clubman")%>%
+           str_replace("paceman", "cooper-paceman")%>%
+           str_replace("countryman", "cooper-countryman")%>%
+           str_replace("roadster", "cooper-roadster")%>%
+           str_replace("coupe", "cooper-coupe")%>%
+           str_replace("^2$", "mazda2")%>%
+           str_replace("^3$", "mazda3")%>%
+           str_replace("^5$", "mazda5")%>%
+           str_replace("^6$", "mazda6")%>%
+           str_replace("^mx5$", "mx-5-miata")
+           )%>%
+  #add column, constructing vehicle url on autotrader.com
+  mutate(
+    autotrader_url=paste(
+      'https://www.autotrader.com', autdr_make, autdr_model, model_year, sep = '/')
+    )
+
+
+glimpse(non_ev_models)
+view(non_ev_models)
+
+```
+
+#EXTRACT ROWS FOR ROUND 1 SCRAPING
+```{r}
+problem_makes <- c("bmw", "ferrari", "land rover")
+problem_models <- c("savana", "sierra", "f-series")
+
+filter(make %in% exclude_make == FALSE) %>%
+    filter(model %in% exclude_model ==FALSE)
+  
+round1 <- non_ev_models%>%
+  filter(make%in% problem_makes == FALSE) %>%
+  ilter(model %in% problem_models ==FALSE)
+
+hybrids <- non_ev_models %>%
+  filter(fuel=="HYBRID")
+
+glimpse(hybrids)
+hybrids
+```
+
+
+#CLEAN AND FORMAT MIDDLE TN DETAILED REGISTRATION
+```{r}
+mdtn_mmyf_19 <- read_csv('../data/mdtn_mmy_fuel_19.csv')%>%
+  colname_cleanup()%>%
+  filter(make %in% exclude_make == FALSE)%>% #Exclude irrelevant makes
+  filter(make %in% exclude_model == FALSE)%>% #Exclude irrelevant models
+  rename(geoid=census_tracts)%>% #Rename tracts to geoid in order to join with shapefiles
+  rename(vehs_reg = calendar_year_2019_vehicle_count)
+
+#Adjust fuel names
+mdtn_mmyf_19$fuel <- mdtn_mmyf_19$fuel%>%
+  str_replace_all("FLEXIBLE \\(GASOLINE\\/ETHANOL\\)", "FLEX FUEL")%>%
+  str_replace_all("BOTH GAS AND ELECTRIC", "HYBRID")
+
+glimpse(mdtn_mmyf_19)
+unique(mdtn_mmyf_19$fuel)
+```
+
+The resulting dataframe includes new vehicle registrations for all fuel types in the 37 counties of Middle TN
+
+```{r}
+
+length(mdtn_mmyf_19$county%>% unique())
+
+length(mdtn_mmyf_19$fuel%>% unique())
+```
+
+```{r}
+write.csv(mdtn_mmyf_19, '../data/mdtn_mmyf_19_df.csv', row.names = FALSE)
+```
+
