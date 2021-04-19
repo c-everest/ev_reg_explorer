@@ -2,7 +2,7 @@
 title: "ce_execute_autotrader_webscraping"
 output: html_document
 date: 1/9/21
-description: Run webscraping code separately from all the webscraping testing & exploration code.
+description: Execute webscraping function separately from the webscraping testing & exploration code.
 ---
 
 Load libraries
@@ -18,7 +18,7 @@ library(xml2)  #XML package no longer maintained. xml2 is a newer wrapper
 #library(R.utils)
 ```
 
-Read in file with vehicle data that's been prepped
+Read in file with vehicle data that's been prepped -- the vehicles in this file will determine what pages are scraped
 ```{r}
 us_ev_msrp<- read_csv('../data/us_ev_mmy.csv')
 view(us_ev_msrp)
@@ -26,6 +26,7 @@ glimpse(us_ev_msrp)
 ```
 
 #Execute webscraping
+#This function is for electric vehicles ONLY
 ```{r}
 #Create column in dataframe and fill with placeholder values
 us_ev_msrp$msrp_min <- 'x'
@@ -90,115 +91,6 @@ Write to CSV
 #write.csv(us_ev_msrp, '../data/us_ev_msrp.csv')
 ```
 
-#SCRAPE HYBRID MODEL PAGES
-
-```{r}
-#1.spoof it with common user agent
-ua <- user_agent("Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/58.0.3029.110 Safari/537.36")
-seesion_with_ua <- html_session("https://scrapethissite.com/",ua)
-#2.fill your contact information in user agent if you want the website owner to contact you
-ua_string <- "Contact me at xyz123@gmail.com"
-seesion_with_ua <- html_session("https://scrapethissite.com/",user_agent(ua_string))
-
-seesion_with_ua <- html_session("https://www.autotrader.com/mazda/mx-5-miata/2021",ua)
-seesion_with_ua%>%html_nodes('img')%>%html_text()
-seesion_with_ua%>%read_html()
-seesion_with_ua
-testpage <- read_html("https://www.autotrader.com/mazda/mx-5-miata/2021")
-
-#Ford Focus page has two trim tables, for each hatchback & sedan. Below code works for this as well.
-#testpage <- read_html("https://www.autotrader.com/ford/focus/2018")
-
-test<-testpage%>%
-  #Select table containing vehicle trim data
-  html_nodes(xpath='//div[@data-cmp="trims"]//table//tbody')%>%
-  #Select rows td child element is "Electric" and extract td element in MSRP column
-  html_nodes(xpath = '//tr[td[text()="!Electric"]]/td[position()=2]')%>%
-  html_text()
-
-test<-testpage%>%
-  #Select table containing vehicle trim data
-  html_nodes("img")
-
-test<-testpage%>%
-  #Select table containing vehicle trim data
-  html_text()
-
-test
-url <- "http://www.calacademy.org/explore-science/new-discoveries-an-alaskan-butterfly-a-spider-physicist-and-more"
-webpage <- html_session(url)
-link.titles <- webpage %>% html_nodes("img")
-
-options("HTTPUserAgent")
-```
-
-
-```{r}
-#Create column in dataframe and fill with placeholder values
-us_ev_msrp$msrp_min <- 'x'
-us_ev_msrp$msrp_max <- 'y'
-
-#Scrape MSRP info with for loop
-for(i in 1:length(us_ev_msrp$autotrader_url)) {
-  #Call the vehicle's specific URL
-  request <-GET(us_ev_msrp$autotrader_url[i])
-  
-  #check the status code
-  request$status_code
-  
-  #if request is successful, proceed to scraping the page
-  if (request$status_code==200)
-    {
-      #extract msrp range for all trim levels with electric motors
-      model_evtrim_msrp<-content(request)%>%
-        #select table containing vehicle trim data
-        html_nodes(xpath='//div[@data-cmp="trims"]//table//tbody')%>%
-        #select rows where td child element is "Electric" and extract td element in MSRP column
-        html_nodes(xpath = '//tr[td[text()="Electric"]]/td[position()=2]')%>%
-        #format as text
-        html_text()%>%
-        #remove dollar sign from MSRP entries
-        str_replace("\\$","")%>%
-        #remove comma from MSRP entries
-        str_replace(",","")%>%
-        #extract digits of MSRPs
-        str_extract("\\d{4,6}")%>%
-        #change from string to numeric
-        as.numeric()
-      
-      #replace placeholder column values with min and max msrp
-      us_ev_msrp$msrp_min[i] <- min(model_evtrim_msrp)
-      us_ev_msrp$msrp_max[i] <- max(model_evtrim_msrp)
-    }
-  
-  #else if request returns anything other than a 200 'OK' status code, print the status code to the column values
-  else 
-    {
-      #replace placeholder column values
-      us_ev_msrp$msrp_min[i] <- request$status_code
-      us_ev_msrp$msrp_max[i] <- request$status_code
-    }
-  
-  #pause between requests & vary duration
-  #generate sample within given range
-  sleep_seconds <- sample(1:5,4)
-  #
-  Sys.sleep(sleep_seconds[(i-1) %% length(sleep_seconds)+1])
-  
-}
-
-glimpse(us_ev_msrp)
-
-view(us_ev_msrp)
-```
-
-
-
-
-
-```{r setup, include=FALSE}
-knitr::opts_chunk$set(echo = TRUE)
-```
 
 
 
